@@ -2,12 +2,16 @@ import { useState } from "react";
 
 function App() {
     const [longUrl, setLongUrl] = useState("");
+    const [customAlias, setCustomAlias] = useState("");
     const [shortUrl, setShortUrl] = useState("");
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState("");
 
     const shortenUrl = async () => {
-        if (!longUrl) {
+        const cleanLongUrl = longUrl.trim();
+        const cleanAlias = customAlias.trim();
+
+        if (!cleanLongUrl) {
             setError("Please enter a URL");
             return;
         }
@@ -25,21 +29,28 @@ function App() {
                         "Content-Type": "application/json",
                     },
                     body: JSON.stringify({
-                        longUrl: longUrl,
+                        longUrl: cleanLongUrl,
+                        ...(cleanAlias ? { customAlias: cleanAlias } : {}),
                     }),
                 }
             );
 
-            const data = await response.json();
+            let data = {};
+
+            try {
+                data = await response.json();
+            } catch {
+                data = {};
+            }
 
             if (!response.ok) {
-                throw new Error(data.error || "Something went wrong");
+                throw new Error(data.error || `Request failed (${response.status})`);
             }
 
             setShortUrl(data.shortUrl);
 
         } catch (error) {
-            setError(error.message);
+            setError(error.message || "Failed to shorten URL");
         } finally {
             setLoading(false);
         }
@@ -61,6 +72,13 @@ function App() {
                 onChange={(e) => setLongUrl(e.target.value)}
             />
 
+            <input
+                type="text"
+                placeholder="Custom alias (optional)"
+                value={customAlias}
+                onChange={(e) => setCustomAlias(e.target.value)}
+            />
+
             <button onClick={shortenUrl}>
                 {loading ? "Shortening..." : "Shorten URL"}
             </button>
@@ -71,7 +89,11 @@ function App() {
                 <div>
                     <p>Your shortened URL:</p>
 
-                    <a href={shortUrl} target="_blank">
+                    <a
+                        href={shortUrl}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                    >
                         {shortUrl}
                     </a>
 
