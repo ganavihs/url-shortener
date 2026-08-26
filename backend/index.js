@@ -92,9 +92,21 @@ app.post("/api/shorten", async (req, res) => {
 
         if (customAlias) {
 
+            // Check alias length
             if (customAlias.length > 50) {
                 return res.status(400).json({
                     error: "Custom alias must be 50 characters or fewer"
+                });
+            }
+
+
+            // ==================================================
+            // CUSTOM ALIAS FORMAT VALIDATION
+            // ==================================================
+
+            if (!/^[a-zA-Z0-9_-]+$/.test(customAlias)) {
+                return res.status(400).json({
+                    error: "Custom alias can only contain letters, numbers, hyphens, and underscores"
                 });
             }
 
@@ -205,7 +217,6 @@ app.post("/api/shorten", async (req, res) => {
         return res.status(500).json({
             error: "Failed to shorten URL"
         });
-
     }
 });
 
@@ -263,7 +274,6 @@ app.get("/:code", async (req, res) => {
         res.status(500).send("Server error");
 
     }
-
 });
 
 
