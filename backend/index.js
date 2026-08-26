@@ -62,10 +62,26 @@ app.post("/api/shorten", async (req, res) => {
             : "";
 
 
-        // Check long URL
+        // ==================================================
+        // CHECK LONG URL
+        // ==================================================
+
         if (!longUrl) {
             return res.status(400).json({
                 error: "longUrl is required"
+            });
+        }
+
+
+        // ==================================================
+        // URL VALIDATION
+        // ==================================================
+
+        try {
+            new URL(longUrl);
+        } catch {
+            return res.status(400).json({
+                error: "Please enter a valid URL"
             });
         }
 
@@ -112,7 +128,6 @@ app.post("/api/shorten", async (req, res) => {
                 shortUrl: `http://localhost:3000/${customAlias}`
             });
         }
-
 
 
         // ==================================================
@@ -171,7 +186,6 @@ app.post("/api/shorten", async (req, res) => {
 });
 
 
-
 // ======================================================
 // REDIRECT SHORT URL
 // ======================================================
@@ -227,7 +241,6 @@ app.get("/:code", async (req, res) => {
     }
 
 });
-
 
 
 // ======================================================
