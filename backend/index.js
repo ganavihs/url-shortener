@@ -98,6 +98,7 @@ app.post("/api/shorten", async (req, res) => {
                 });
             }
 
+
             // Check if custom alias already exists
             const existing = await pool.query(
                 "SELECT id FROM urls WHERE short_code = $1",
@@ -126,6 +127,29 @@ app.post("/api/shorten", async (req, res) => {
             return res.json({
                 shortCode: customAlias,
                 shortUrl: `http://localhost:3000/${customAlias}`
+            });
+        }
+
+
+        // ==================================================
+        // CHECK FOR DUPLICATE URL
+        // ==================================================
+
+        const existingUrl = await pool.query(
+            "SELECT short_code FROM urls WHERE long_url = $1 LIMIT 1",
+            [longUrl]
+        );
+
+
+        // If URL already exists, return existing short URL
+        if (existingUrl.rows.length > 0) {
+
+            const existingShortCode = existingUrl.rows[0].short_code;
+
+            return res.json({
+                shortCode: existingShortCode,
+                shortUrl: `http://localhost:3000/${existingShortCode}`,
+                message: "This URL already exists"
             });
         }
 
