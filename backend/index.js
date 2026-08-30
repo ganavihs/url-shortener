@@ -335,6 +335,46 @@ app.post("/api/shorten", async (req, res) => {
 });
 
 // ======================================================
+// LIST ALL SHORT URLs
+// ======================================================
+
+app.get("/api/urls", async (req, res) => {
+
+    try {
+
+        const result = await pool.query(
+            `SELECT
+                short_code,
+                long_url,
+                clicks,
+                created_at,
+                expires_at
+             FROM urls
+             ORDER BY created_at DESC`
+        );
+
+        const urls = result.rows.map((url) => ({
+            shortCode: url.short_code,
+            shortUrl: `http://localhost:3000/${url.short_code}`,
+            longUrl: url.long_url,
+            clicks: url.clicks,
+            createdAt: url.created_at,
+            expiresAt: url.expires_at
+        }));
+
+        return res.json(urls);
+
+    } catch (error) {
+
+        console.error(error);
+
+        return res.status(500).json({
+            error: "Failed to fetch URLs"
+        });
+    }
+});
+
+// ======================================================
 // UPDATE SHORT URL
 // ======================================================
 
