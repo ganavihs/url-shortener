@@ -49,11 +49,13 @@ const pool = new Pool({
 
 app.get("/health", async (req, res) => {
     try {
+
         await pool.query("SELECT 1");
 
         res.send("Server and database are working!");
 
     } catch (error) {
+
         console.error(error);
 
         res.status(500).send("Database connection failed");
@@ -65,6 +67,7 @@ app.get("/health", async (req, res) => {
 // ======================================================
 
 app.post("/api/shorten", async (req, res) => {
+
     try {
 
         // --------------------------------------------------
@@ -91,6 +94,7 @@ app.post("/api/shorten", async (req, res) => {
         // --------------------------------------------------
 
         if (!longUrl) {
+
             return res.status(400).json({
                 error: "longUrl is required"
             });
@@ -101,9 +105,11 @@ app.post("/api/shorten", async (req, res) => {
         // --------------------------------------------------
 
         try {
+
             new URL(longUrl);
 
         } catch {
+
             return res.status(400).json({
                 error: "Please enter a valid URL"
             });
@@ -119,7 +125,6 @@ app.post("/api/shorten", async (req, res) => {
 
             expirationDate = new Date(expiresAt);
 
-            // Check whether date is valid
             if (isNaN(expirationDate.getTime())) {
 
                 return res.status(400).json({
@@ -127,7 +132,6 @@ app.post("/api/shorten", async (req, res) => {
                 });
             }
 
-            // Expiration must be in the future
             if (expirationDate <= new Date()) {
 
                 return res.status(400).json({
@@ -258,9 +262,6 @@ app.post("/api/shorten", async (req, res) => {
         // AUTOMATIC BASE62 SHORT CODE
         // ==================================================
 
-        // Insert temporary value first
-        // so PostgreSQL generates the ID.
-
         const result = await pool.query(
             `INSERT INTO urls
             (long_url, short_code, expires_at)
@@ -320,7 +321,6 @@ app.post("/api/shorten", async (req, res) => {
 
         console.error(error);
 
-        // PostgreSQL duplicate key
         if (error.code === "23505") {
 
             return res.status(409).json({
@@ -335,10 +335,10 @@ app.post("/api/shorten", async (req, res) => {
 });
 
 // ======================================================
-// URL STATISTICS
+// UPDATE SHORT URL
 // ======================================================
 
-app.get("/api/stats/:code", async (req, res) => {
+app.put("/api/urls/:code", async (req, res) => {
 
     try {
 
@@ -349,8 +349,146 @@ app.get("/api/stats/:code", async (req, res) => {
         const { code } = req.params;
 
         // --------------------------------------------------
-        // FIND URL
+        // GET NEW DATA
         // --------------------------------------------------
+
+        const longUrl =
+            typeof req.body?.longUrl === "string"
+                ? req.body.longUrl.trim()
+                : "";
+
+        const expiresAt =
+            typeof req.body?.expiresAt === "string"
+                ? req.body.expiresAt.trim()
+                : "";
+
+        // --------------------------------------------------
+        // CHECK LONG URL
+        // --------------------------------------------------
+
+        if (!longUrl) {
+
+            return res.status(400).json({
+                error: "longUrl is required"
+            });
+        }
+
+        // --------------------------------------------------
+        // URL VALIDATION
+        // --------------------------------------------------
+
+        try {
+
+            new URL(longUrl);
+
+        } catch {
+
+            return res.status(400).json({
+                error: "Please enter a valid URL"
+            });
+        }
+
+        // --------------------------------------------------
+        // EXPIRATION DATE VALIDATION
+        // --------------------------------------------------
+
+        let expirationDate = null;
+
+        if (expiresAt) {
+
+            expirationDate = new Date(expiresAt);
+
+            if (isNaN(expirationDate.getTime())) {
+
+                return res.status(400).json({
+                    error: "Please enter a valid expiration date"
+                });
+            }
+
+            if (expirationDate <= new Date()) {
+
+                return res.status(400).json({
+                    error: "Expiration date must be in the future"
+                });
+            }
+        }
+
+        // --------------------------------------------------
+        // UPDATE URL
+        // --------------------------------------------------
+
+        const result = await pool.query(
+            `UPDATE urls
+             SET long_url = $1,
+                 expires_at = $2
+             WHERE short_code = $3
+             RETURNING
+                 short_code,
+                 long_url,
+                 clicks,
+                 created_at,
+                 expires_at`,
+            [
+                longUrl,
+                expirationDate,
+                code
+            ]
+        );
+
+        // --------------------------------------------------
+        // URL NOT FOUND
+        // --------------------------------------------------
+
+        if (result.rows.length === 0) {
+
+            return res.status(404).json({
+                error: "Short URL not found"
+            });
+        }
+
+        // --------------------------------------------------
+        // RETURN UPDATED URL
+        // --------------------------------------------------
+
+        const url = result.rows[0];
+
+        return res.json({
+
+            message: "Short URL updated successfully",
+
+            shortCode: url.short_code,
+
+            shortUrl:
+                `http://localhost:3000/${url.short_code}`,
+
+            longUrl: url.long_url,
+
+            clicks: url.clicks,
+
+            createdAt: url.created_at,
+
+            expiresAt: url.expires_at
+        });
+
+    } catch (error) {
+
+        console.error(error);
+
+        return res.status(500).json({
+            error: "Failed to update short URL"
+        });
+    }
+});
+
+// ======================================================
+// URL STATISTICS
+// ======================================================
+
+app.get("/api/stats/:code", async (req, res) => {
+
+    try {
+
+        const { code } = req.params;
 
         const result = await pool.query(
             `SELECT
@@ -452,8 +590,11 @@ app.delete("/api/urls/:code", async (req, res) => {
         // --------------------------------------------------
 
         return res.json({
+
             message: "Short URL deleted successfully",
-            shortCode: result.rows[0].short_code
+
+            shortCode:
+                result.rows[0].short_code
         });
 
     } catch (error) {
