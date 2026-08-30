@@ -51,6 +51,7 @@ app.get("/health", async (req, res) => {
 // ======================================================
 
 app.post("/api/shorten", async (req, res) => {
+
     try {
 
         const longUrl = typeof req.body?.longUrl === "string"
@@ -61,15 +62,21 @@ app.post("/api/shorten", async (req, res) => {
             ? req.body.customAlias.trim()
             : "";
 
+        const expiresAt = typeof req.body?.expiresAt === "string"
+            ? req.body.expiresAt.trim()
+            : "";
+
 
         // ==================================================
         // CHECK LONG URL
         // ==================================================
 
         if (!longUrl) {
+
             return res.status(400).json({
                 error: "longUrl is required"
             });
+
         }
 
 
@@ -78,11 +85,47 @@ app.post("/api/shorten", async (req, res) => {
         // ==================================================
 
         try {
+
             new URL(longUrl);
+
         } catch {
+
             return res.status(400).json({
                 error: "Please enter a valid URL"
             });
+
+        }
+
+
+        // ==================================================
+        // EXPIRATION VALIDATION
+        // ==================================================
+
+        let expirationDate = null;
+
+        if (expiresAt) {
+
+            expirationDate = new Date(expiresAt);
+
+            // Check if date is valid
+            if (isNaN(expirationDate.getTime())) {
+
+                return res.status(400).json({
+                    error: "Please enter a valid expiration date"
+                });
+
+            }
+
+
+            // Expiration date must be in the future
+            if (expirationDate <= new Date()) {
+
+                return res.status(400).json({
+                    error: "Expiration date must be in the future"
+                });
+
+            }
+
         }
 
 
@@ -94,9 +137,11 @@ app.post("/api/shorten", async (req, res) => {
 
             // Check alias length
             if (customAlias.length > 50) {
+
                 return res.status(400).json({
                     error: "Custom alias must be 50 characters or fewer"
                 });
+
             }
 
 
@@ -105,13 +150,18 @@ app.post("/api/shorten", async (req, res) => {
             // ==================================================
 
             if (!/^[a-zA-Z0-9_-]+$/.test(customAlias)) {
+
                 return res.status(400).json({
                     error: "Custom alias can only contain letters, numbers, hyphens, and underscores"
                 });
+
             }
 
 
-            // Check if custom alias already exists
+            // ==================================================
+            // CHECK IF CUSTOM ALIAS EXISTS
+            // ==================================================
+
             const existing = await pool.query(
                 "SELECT id FROM urls WHERE short_code = $1",
                 [customAlias]
@@ -120,24 +170,40 @@ app.post("/api/shorten", async (req, res) => {
 
             // Alias already exists
             if (existing.rows.length > 0) {
+
                 return res.status(409).json({
                     error: "Custom alias is already taken"
                 });
+
             }
 
 
-            // Save URL with custom alias
+            // ==================================================
+            // SAVE URL WITH CUSTOM ALIAS
+            // ==================================================
+
             await pool.query(
-                "INSERT INTO urls (long_url, short_code) VALUES ($1, $2)",
-                [longUrl, customAlias]
+                `INSERT INTO urls
+                (long_url, short_code, expires_at)
+                VALUES ($1, $2, $3)`,
+                [longUrl, customAlias, expirationDate]
             );
 
 
-            // Send response
+            // ==================================================
+            // SEND RESPONSE
+            // ==================================================
+
             return res.json({
+
                 shortCode: customAlias,
-                shortUrl: `http://localhost:3000/${customAlias}`
+
+                shortUrl: `http://localhost:3000/${customAlias}`,
+
+                expiresAt: expirationDate
+
             });
+
         }
 
 
@@ -146,21 +212,34 @@ app.post("/api/shorten", async (req, res) => {
         // ==================================================
 
         const existingUrl = await pool.query(
-            "SELECT short_code FROM urls WHERE long_url = $1 LIMIT 1",
+            "SELECT short_code, expires_at FROM urls WHERE long_url = $1 LIMIT 1",
             [longUrl]
         );
 
 
-        // If URL already exists, return existing short URL
+        // If URL already exists
         if (existingUrl.rows.length > 0) {
 
-            const existingShortCode = existingUrl.rows[0].short_code;
+            const existingShortCode =
+                existingUrl.rows[0].short_code;
+
+            const existingExpiresAt =
+                existingUrl.rows[0].expires_at;
+
 
             return res.json({
+
                 shortCode: existingShortCode,
-                shortUrl: `http://localhost:3000/${existingShortCode}`,
+
+                shortUrl:
+                    `http://localhost:3000/${existingShortCode}`,
+
+                expiresAt: existingExpiresAt,
+
                 message: "This URL already exists"
+
             });
+
         }
 
 
@@ -170,8 +249,14 @@ app.post("/api/shorten", async (req, res) => {
 
         // Insert temporary value to get database ID
         const result = await pool.query(
-            "INSERT INTO urls (long_url, short_code) VALUES ($1, $2) RETURNING id",
-            [longUrl, "temp"]
+
+            `INSERT INTO urls
+            (long_url, short_code, expires_at)
+            VALUES ($1, $2, $3)
+            RETURNING id`,
+
+            [longUrl, "temp", expirationDate]
+
         );
 
 
@@ -185,15 +270,27 @@ app.post("/api/shorten", async (req, res) => {
 
         // Update database with generated short code
         await pool.query(
+
             "UPDATE urls SET short_code = $1 WHERE id = $2",
+
             [shortCode, id]
+
         );
 
 
-        // Send response
+        // ==================================================
+        // SEND RESPONSE
+        // ==================================================
+
         return res.json({
+
             shortCode: shortCode,
-            shortUrl: `http://localhost:3000/${shortCode}`
+
+            shortUrl:
+                `http://localhost:3000/${shortCode}`,
+
+            expiresAt: expirationDate
+
         });
 
 
@@ -204,21 +301,25 @@ app.post("/api/shorten", async (req, res) => {
 
         // PostgreSQL duplicate key error
         if (error.code === "23505") {
+
             return res.status(409).json({
                 error: "Custom alias is already taken"
             });
+
         }
 
 
         return res.status(500).json({
             error: "Failed to shorten URL"
         });
+
     }
+
 });
 
 
 // ======================================================
-// REDIRECT SHORT URL + COUNT CLICKS
+// REDIRECT SHORT URL + COUNT CLICKS + EXPIRATION
 // ======================================================
 
 app.get("/:code", async (req, res) => {
@@ -229,10 +330,18 @@ app.get("/:code", async (req, res) => {
         const { code } = req.params;
 
 
-        // Find original URL
+        // ==================================================
+        // FIND ORIGINAL URL
+        // ==================================================
+
         const result = await pool.query(
-            "SELECT long_url, clicks FROM urls WHERE short_code = $1",
+
+            `SELECT long_url, clicks, expires_at
+             FROM urls
+             WHERE short_code = $1`,
+
             [code]
+
         );
 
 
@@ -246,7 +355,26 @@ app.get("/:code", async (req, res) => {
         }
 
 
-        // Get original URL
+        // ==================================================
+        // CHECK EXPIRATION
+        // ==================================================
+
+        const expiresAt = result.rows[0].expires_at;
+
+
+        if (expiresAt && new Date() >= new Date(expiresAt)) {
+
+            return res.status(410).send(
+                "This short URL has expired"
+            );
+
+        }
+
+
+        // ==================================================
+        // GET ORIGINAL URL
+        // ==================================================
+
         const longUrl = result.rows[0].long_url;
 
 
@@ -255,12 +383,18 @@ app.get("/:code", async (req, res) => {
         // ==================================================
 
         await pool.query(
+
             "UPDATE urls SET clicks = clicks + 1 WHERE short_code = $1",
+
             [code]
+
         );
 
 
-        // Log redirect
+        // ==================================================
+        // LOG REDIRECT
+        // ==================================================
+
         console.log(
             "REDIRECT",
             code,
@@ -269,7 +403,10 @@ app.get("/:code", async (req, res) => {
         );
 
 
-        // Redirect user
+        // ==================================================
+        // REDIRECT USER
+        // ==================================================
+
         res.redirect(longUrl);
 
 
@@ -280,6 +417,7 @@ app.get("/:code", async (req, res) => {
         res.status(500).send("Server error");
 
     }
+
 });
 
 
