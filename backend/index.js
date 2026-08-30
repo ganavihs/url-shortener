@@ -120,11 +120,9 @@ app.post("/api/shorten", async (req, res) => {
 
             // Alias already exists
             if (existing.rows.length > 0) {
-
                 return res.status(409).json({
                     error: "Custom alias is already taken"
                 });
-
             }
 
 
@@ -206,11 +204,9 @@ app.post("/api/shorten", async (req, res) => {
 
         // PostgreSQL duplicate key error
         if (error.code === "23505") {
-
             return res.status(409).json({
                 error: "Custom alias is already taken"
             });
-
         }
 
 
@@ -222,7 +218,7 @@ app.post("/api/shorten", async (req, res) => {
 
 
 // ======================================================
-// REDIRECT SHORT URL
+// REDIRECT SHORT URL + COUNT CLICKS
 // ======================================================
 
 app.get("/:code", async (req, res) => {
@@ -235,7 +231,7 @@ app.get("/:code", async (req, res) => {
 
         // Find original URL
         const result = await pool.query(
-            "SELECT long_url FROM urls WHERE short_code = $1",
+            "SELECT long_url, clicks FROM urls WHERE short_code = $1",
             [code]
         );
 
@@ -252,6 +248,16 @@ app.get("/:code", async (req, res) => {
 
         // Get original URL
         const longUrl = result.rows[0].long_url;
+
+
+        // ==================================================
+        // INCREMENT CLICK COUNT
+        // ==================================================
+
+        await pool.query(
+            "UPDATE urls SET clicks = clicks + 1 WHERE short_code = $1",
+            [code]
+        );
 
 
         // Log redirect
