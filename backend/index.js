@@ -7,7 +7,6 @@ const encodeBase62 = require("./utils/base62");
 
 const app = express();
 
-
 // ======================================================
 // CORS
 // ======================================================
@@ -21,7 +20,6 @@ app.use(
     })
 );
 
-
 // ======================================================
 // REQUEST LOGGER
 // ======================================================
@@ -31,13 +29,11 @@ app.use((req, res, next) => {
     next();
 });
 
-
 // ======================================================
 // PARSE JSON
 // ======================================================
 
 app.use(express.json());
-
 
 // ======================================================
 // POSTGRESQL CONNECTION
@@ -47,35 +43,28 @@ const pool = new Pool({
     connectionString: process.env.DATABASE_URL,
 });
 
-
 // ======================================================
 // HEALTH CHECK
 // ======================================================
 
 app.get("/health", async (req, res) => {
-
     try {
-
         await pool.query("SELECT 1");
 
         res.send("Server and database are working!");
 
     } catch (error) {
-
         console.error(error);
 
         res.status(500).send("Database connection failed");
     }
-
 });
-
 
 // ======================================================
 // CREATE SHORT URL
 // ======================================================
 
 app.post("/api/shorten", async (req, res) => {
-
     try {
 
         // --------------------------------------------------
@@ -97,36 +86,28 @@ app.post("/api/shorten", async (req, res) => {
                 ? req.body.expiresAt.trim()
                 : "";
 
-
         // --------------------------------------------------
         // CHECK LONG URL
         // --------------------------------------------------
 
         if (!longUrl) {
-
             return res.status(400).json({
                 error: "longUrl is required"
             });
-
         }
-
 
         // --------------------------------------------------
         // URL VALIDATION
         // --------------------------------------------------
 
         try {
-
             new URL(longUrl);
 
         } catch {
-
             return res.status(400).json({
                 error: "Please enter a valid URL"
             });
-
         }
-
 
         // --------------------------------------------------
         // EXPIRATION DATE VALIDATION
@@ -144,9 +125,7 @@ app.post("/api/shorten", async (req, res) => {
                 return res.status(400).json({
                     error: "Please enter a valid expiration date"
                 });
-
             }
-
 
             // Expiration must be in the future
             if (expirationDate <= new Date()) {
@@ -154,11 +133,8 @@ app.post("/api/shorten", async (req, res) => {
                 return res.status(400).json({
                     error: "Expiration date must be in the future"
                 });
-
             }
-
         }
-
 
         // ==================================================
         // CUSTOM ALIAS
@@ -175,9 +151,7 @@ app.post("/api/shorten", async (req, res) => {
                 return res.status(400).json({
                     error: "Custom alias must be 50 characters or fewer"
                 });
-
             }
-
 
             // ------------------------------------------------
             // ALIAS FORMAT
@@ -189,9 +163,7 @@ app.post("/api/shorten", async (req, res) => {
                     error:
                         "Custom alias can only contain letters, numbers, hyphens, and underscores"
                 });
-
             }
-
 
             // ------------------------------------------------
             // CHECK IF ALIAS EXISTS
@@ -202,15 +174,12 @@ app.post("/api/shorten", async (req, res) => {
                 [customAlias]
             );
 
-
             if (existing.rows.length > 0) {
 
                 return res.status(409).json({
                     error: "Custom alias is already taken"
                 });
-
             }
-
 
             // ------------------------------------------------
             // SAVE CUSTOM ALIAS
@@ -227,7 +196,6 @@ app.post("/api/shorten", async (req, res) => {
                 ]
             );
 
-
             // ------------------------------------------------
             // RESPONSE
             // ------------------------------------------------
@@ -240,13 +208,11 @@ app.post("/api/shorten", async (req, res) => {
                     `http://localhost:3000/${customAlias}`,
 
                 ...(expirationDate && {
-                    expiresAt: expirationDate.toISOString()
+                    expiresAt:
+                        expirationDate.toISOString()
                 })
-
             });
-
         }
-
 
         // ==================================================
         // CHECK FOR DUPLICATE URL
@@ -260,7 +226,6 @@ app.post("/api/shorten", async (req, res) => {
             [longUrl]
         );
 
-
         // --------------------------------------------------
         // URL ALREADY EXISTS
         // --------------------------------------------------
@@ -272,7 +237,6 @@ app.post("/api/shorten", async (req, res) => {
 
             const existingExpiresAt =
                 existingUrl.rows[0].expires_at;
-
 
             return res.json({
 
@@ -287,11 +251,8 @@ app.post("/api/shorten", async (req, res) => {
                     expiresAt:
                         new Date(existingExpiresAt).toISOString()
                 })
-
             });
-
         }
-
 
         // ==================================================
         // AUTOMATIC BASE62 SHORT CODE
@@ -312,20 +273,17 @@ app.post("/api/shorten", async (req, res) => {
             ]
         );
 
-
         // --------------------------------------------------
         // GET DATABASE ID
         // --------------------------------------------------
 
         const id = result.rows[0].id;
 
-
         // --------------------------------------------------
         // CONVERT ID TO BASE62
         // --------------------------------------------------
 
         const shortCode = encodeBase62(id);
-
 
         // --------------------------------------------------
         // UPDATE SHORT CODE
@@ -340,7 +298,6 @@ app.post("/api/shorten", async (req, res) => {
                 id
             ]
         );
-
 
         // --------------------------------------------------
         // RESPONSE
@@ -357,14 +314,11 @@ app.post("/api/shorten", async (req, res) => {
                 expiresAt:
                     expirationDate.toISOString()
             })
-
         });
-
 
     } catch (error) {
 
         console.error(error);
-
 
         // PostgreSQL duplicate key
         if (error.code === "23505") {
@@ -372,18 +326,13 @@ app.post("/api/shorten", async (req, res) => {
             return res.status(409).json({
                 error: "Custom alias is already taken"
             });
-
         }
-
 
         return res.status(500).json({
             error: "Failed to shorten URL"
         });
-
     }
-
 });
-
 
 // ======================================================
 // URL STATISTICS
@@ -398,7 +347,6 @@ app.get("/api/stats/:code", async (req, res) => {
         // --------------------------------------------------
 
         const { code } = req.params;
-
 
         // --------------------------------------------------
         // FIND URL
@@ -416,7 +364,6 @@ app.get("/api/stats/:code", async (req, res) => {
             [code]
         );
 
-
         // --------------------------------------------------
         // URL NOT FOUND
         // --------------------------------------------------
@@ -426,16 +373,13 @@ app.get("/api/stats/:code", async (req, res) => {
             return res.status(404).json({
                 error: "Short URL not found"
             });
-
         }
-
 
         // --------------------------------------------------
         // GET DATA
         // --------------------------------------------------
 
         const url = result.rows[0];
-
 
         // --------------------------------------------------
         // RETURN STATISTICS
@@ -455,9 +399,7 @@ app.get("/api/stats/:code", async (req, res) => {
             createdAt: url.created_at,
 
             expiresAt: url.expires_at
-
         });
-
 
     } catch (error) {
 
@@ -466,11 +408,63 @@ app.get("/api/stats/:code", async (req, res) => {
         return res.status(500).json({
             error: "Failed to fetch URL statistics"
         });
-
     }
-
 });
 
+// ======================================================
+// DELETE SHORT URL
+// ======================================================
+
+app.delete("/api/urls/:code", async (req, res) => {
+
+    try {
+
+        // --------------------------------------------------
+        // GET SHORT CODE
+        // --------------------------------------------------
+
+        const { code } = req.params;
+
+        // --------------------------------------------------
+        // DELETE URL
+        // --------------------------------------------------
+
+        const result = await pool.query(
+            `DELETE FROM urls
+             WHERE short_code = $1
+             RETURNING short_code`,
+            [code]
+        );
+
+        // --------------------------------------------------
+        // URL NOT FOUND
+        // --------------------------------------------------
+
+        if (result.rows.length === 0) {
+
+            return res.status(404).json({
+                error: "Short URL not found"
+            });
+        }
+
+        // --------------------------------------------------
+        // SUCCESS RESPONSE
+        // --------------------------------------------------
+
+        return res.json({
+            message: "Short URL deleted successfully",
+            shortCode: result.rows[0].short_code
+        });
+
+    } catch (error) {
+
+        console.error(error);
+
+        return res.status(500).json({
+            error: "Failed to delete short URL"
+        });
+    }
+});
 
 // ======================================================
 // REDIRECT SHORT URL + COUNT CLICKS + EXPIRATION
@@ -486,7 +480,6 @@ app.get("/:code", async (req, res) => {
 
         const { code } = req.params;
 
-
         // --------------------------------------------------
         // FIND ORIGINAL URL
         // --------------------------------------------------
@@ -501,7 +494,6 @@ app.get("/:code", async (req, res) => {
             [code]
         );
 
-
         // --------------------------------------------------
         // SHORT CODE DOESN'T EXIST
         // --------------------------------------------------
@@ -511,9 +503,7 @@ app.get("/:code", async (req, res) => {
             return res.status(404).send(
                 "Short URL not found"
             );
-
         }
-
 
         // --------------------------------------------------
         // GET DATA
@@ -524,7 +514,6 @@ app.get("/:code", async (req, res) => {
 
         const expiresAt =
             result.rows[0].expires_at;
-
 
         // ==================================================
         // CHECK EXPIRATION
@@ -538,9 +527,7 @@ app.get("/:code", async (req, res) => {
             return res.status(410).send(
                 "This short URL has expired"
             );
-
         }
-
 
         // ==================================================
         // INCREMENT CLICK COUNT
@@ -553,7 +540,6 @@ app.get("/:code", async (req, res) => {
             [code]
         );
 
-
         // --------------------------------------------------
         // LOG REDIRECT
         // --------------------------------------------------
@@ -565,13 +551,11 @@ app.get("/:code", async (req, res) => {
             longUrl
         );
 
-
         // --------------------------------------------------
         // REDIRECT USER
         // --------------------------------------------------
 
         res.redirect(longUrl);
-
 
     } catch (error) {
 
@@ -580,11 +564,8 @@ app.get("/:code", async (req, res) => {
         res.status(500).send(
             "Server error"
         );
-
     }
-
 });
-
 
 // ======================================================
 // START SERVER
