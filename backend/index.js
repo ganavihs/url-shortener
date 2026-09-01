@@ -231,7 +231,7 @@ app.post("/api/shorten", async (req, res) => {
         );
 
         // --------------------------------------------------
-        // URL ALREADY EXISTS
+        // URL ALREADY EXISTS AND IS ACTIVE
         // --------------------------------------------------
 
         if (existingUrl.rows.length > 0) {
@@ -242,20 +242,44 @@ app.post("/api/shorten", async (req, res) => {
             const existingExpiresAt =
                 existingUrl.rows[0].expires_at;
 
-            return res.json({
+            // ------------------------------------------------
+            // CHECK IF EXISTING URL HAS EXPIRED
+            // ------------------------------------------------
 
-                shortCode: existingShortCode,
+            const isExistingExpired =
+                existingExpiresAt &&
+                new Date(existingExpiresAt) <= new Date();
 
-                shortUrl:
-                    `http://localhost:3000/${existingShortCode}`,
+            // ------------------------------------------------
+            // IF EXPIRED, ALLOW NEW CREATION
+            // ------------------------------------------------
 
-                message: "This URL already exists",
+            if (isExistingExpired) {
 
-                ...(existingExpiresAt && {
-                    expiresAt:
-                        new Date(existingExpiresAt).toISOString()
-                })
-            });
+                // Continue to create a new short URL
+                // (do not return here)
+
+            } else {
+
+                // ----------------------------------------
+                // RETURN EXISTING ACTIVE URL
+                // ----------------------------------------
+
+                return res.json({
+
+                    shortCode: existingShortCode,
+
+                    shortUrl:
+                        `http://localhost:3000/${existingShortCode}`,
+
+                    message: "This URL already exists",
+
+                    ...(existingExpiresAt && {
+                        expiresAt:
+                            new Date(existingExpiresAt).toISOString()
+                    })
+                });
+            }
         }
 
         // ==================================================
