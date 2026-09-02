@@ -7,16 +7,30 @@ const encodeBase62 = require("./utils/base62");
 
 const app = express();
 
+const PORT = process.env.PORT || 3000;
+const BASE_URL = (process.env.BASE_URL || `http://localhost:${PORT}`).replace(/\/$/, "");
+
 // ======================================================
 // CORS
 // ======================================================
 
+const allowedOrigins = [
+    "http://localhost:5173",
+    "http://127.0.0.1:5173"
+];
+
+if (process.env.FRONTEND_URL) {
+    process.env.FRONTEND_URL.split(",").forEach((origin) => {
+        const trimmed = origin.trim().replace(/\/$/, "");
+        if (trimmed && !allowedOrigins.includes(trimmed)) {
+            allowedOrigins.push(trimmed);
+        }
+    });
+}
+
 app.use(
     cors({
-        origin: [
-            "http://localhost:5173",
-            "http://127.0.0.1:5173"
-        ]
+        origin: allowedOrigins
     })
 );
 
@@ -209,7 +223,7 @@ app.post("/api/shorten", async (req, res) => {
                 shortCode: customAlias,
 
                 shortUrl:
-                    `http://localhost:3000/${customAlias}`,
+                    `${BASE_URL}/${customAlias}`,
 
                 ...(expirationDate && {
                     expiresAt:
@@ -270,7 +284,7 @@ app.post("/api/shorten", async (req, res) => {
                     shortCode: existingShortCode,
 
                     shortUrl:
-                        `http://localhost:3000/${existingShortCode}`,
+                        `${BASE_URL}/${existingShortCode}`,
 
                     message: "This URL already exists",
 
@@ -286,23 +300,15 @@ app.post("/api/shorten", async (req, res) => {
         // AUTOMATIC BASE62 SHORT CODE
         // ==================================================
 
-        const result = await pool.query(
-            `INSERT INTO urls
-            (long_url, short_code, expires_at)
-            VALUES ($1, $2, $3)
-            RETURNING id`,
-            [
-                longUrl,
-                "temp",
-                expirationDate
-            ]
+        // --------------------------------------------------
+        // GET NEXT SEQUENCE ID (ATOMIC & CONCURRENCY SAFE)
+        // --------------------------------------------------
+
+        const seqResult = await pool.query(
+            "SELECT nextval('urls_id_seq') AS id"
         );
 
-        // --------------------------------------------------
-        // GET DATABASE ID
-        // --------------------------------------------------
-
-        const id = result.rows[0].id;
+        const id = parseInt(seqResult.rows[0].id, 10);
 
         // --------------------------------------------------
         // CONVERT ID TO BASE62
@@ -311,16 +317,18 @@ app.post("/api/shorten", async (req, res) => {
         const shortCode = encodeBase62(id);
 
         // --------------------------------------------------
-        // UPDATE SHORT CODE
+        // ATOMIC INSERT WITH FINAL SHORT CODE
         // --------------------------------------------------
 
         await pool.query(
-            `UPDATE urls
-             SET short_code = $1
-             WHERE id = $2`,
+            `INSERT INTO urls
+            (id, long_url, short_code, expires_at)
+            VALUES ($1, $2, $3, $4)`,
             [
+                id,
+                longUrl,
                 shortCode,
-                id
+                expirationDate
             ]
         );
 
@@ -333,7 +341,7 @@ app.post("/api/shorten", async (req, res) => {
             shortCode: shortCode,
 
             shortUrl:
-                `http://localhost:3000/${shortCode}`,
+                `${BASE_URL}/${shortCode}`,
 
             ...(expirationDate && {
                 expiresAt:
@@ -379,7 +387,7 @@ app.get("/api/urls", async (req, res) => {
 
         const urls = result.rows.map((url) => ({
             shortCode: url.short_code,
-            shortUrl: `http://localhost:3000/${url.short_code}`,
+            shortUrl: `${BASE_URL}/${url.short_code}`,
             longUrl: url.long_url,
             clicks: url.clicks,
             createdAt: url.created_at,
@@ -523,7 +531,7 @@ app.put("/api/urls/:code", async (req, res) => {
             shortCode: url.short_code,
 
             shortUrl:
-                `http://localhost:3000/${url.short_code}`,
+                `${BASE_URL}/${url.short_code}`,
 
             longUrl: url.long_url,
 
@@ -592,7 +600,7 @@ app.get("/api/stats/:code", async (req, res) => {
             shortCode: url.short_code,
 
             shortUrl:
-                `http://localhost:3000/${url.short_code}`,
+                `${BASE_URL}/${url.short_code}`,
 
             longUrl: url.long_url,
 
@@ -776,10 +784,10 @@ app.get("/:code", async (req, res) => {
 // START SERVER
 // ======================================================
 
-app.listen(3000, () => {
+app.listen(PORT, () => {
 
     console.log(
-        "Server running on http://localhost:3000"
+        `Server running on http://localhost:${PORT}`
     );
 
 });

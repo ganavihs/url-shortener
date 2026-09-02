@@ -1,7 +1,19 @@
-﻿import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import "./App.css";
 
-const API_URL = "http://localhost:3000";
+const API_URL = import.meta.env.VITE_API_URL || "http://localhost:3000";
+const API_DOMAIN = API_URL.replace(/^https?:\/\//, "");
+
+// Helper to get minimum local datetime string (YYYY-MM-DDTHH:MM) for datetime-local inputs
+const getMinDateTime = () => {
+    const now = new Date();
+    const year = now.getFullYear();
+    const month = String(now.getMonth() + 1).padStart(2, "0");
+    const day = String(now.getDate()).padStart(2, "0");
+    const hours = String(now.getHours()).padStart(2, "0");
+    const minutes = String(now.getMinutes()).padStart(2, "0");
+    return `${year}-${month}-${day}T${hours}:${minutes}`;
+};
 
 function App() {
     const [longUrl, setLongUrl] = useState("");
@@ -11,19 +23,40 @@ function App() {
     const [urls, setUrls] = useState([]);
     const [loading, setLoading] = useState(false);
     const [loadingUrls, setLoadingUrls] = useState(false);
-    const [error, setError] = useState("");
-    const [message, setMessage] = useState("");
     const [createdUrl, setCreatedUrl] = useState(null);
     const [showAllLinks, setShowAllLinks] = useState(false);
 
+    // Search and filtering state
+    const [searchQuery, setSearchQuery] = useState("");
+    const [statusFilter, setStatusFilter] = useState("all"); // "all" | "active" | "expired"
+
+    // Toast notification state
+    const [toasts, setToasts] = useState([]);
+
+    // Copy feedback state (tracks the specific shortCode or "created" that was copied)
+    const [copiedCode, setCopiedCode] = useState(null);
+
+    // Editing state (supports both URL and expiration date)
     const [editingCode, setEditingCode] = useState(null);
     const [editUrl, setEditUrl] = useState("");
+    const [editExpiresAt, setEditExpiresAt] = useState("");
+    const [updating, setUpdating] = useState(false);
 
-    const loadUrls = async () => {
+    const showToast = (type, text) => {
+        const id = Date.now() + Math.random().toString(36).substring(2, 9);
+        setToasts((prev) => [...prev, { id, type, text }]);
+        setTimeout(() => {
+            setToasts((prev) => prev.filter((t) => t.id !== id));
+        }, 3500);
+    };
+
+    const removeToast = (id) => {
+        setToasts((prev) => prev.filter((t) => t.id !== id));
+    };
+
+    const loadUrls = useCallback(async () => {
         try {
             setLoadingUrls(true);
-            setError("");
-
             const response = await fetch(`${API_URL}/api/urls`);
             const data = await response.json();
 
@@ -33,29 +66,59 @@ function App() {
 
             setUrls(Array.isArray(data) ? data : []);
         } catch (error) {
-            setError(error.message || "Failed to load URLs");
+            showToast("error", error.message || "Failed to load URLs");
         } finally {
             setLoadingUrls(false);
         }
-    };
-
-    useEffect(() => {
-        loadUrls();
     }, []);
 
-    const shortenUrl = async () => {
+    useEffect(() => {
+        let isMounted = true;
+        const fetchUrls = async () => {
+            try {
+                setLoadingUrls(true);
+                const response = await fetch(`${API_URL}/api/urls`);
+                const data = await response.json();
+
+                if (!response.ok) {
+                    throw new Error(data.error || "Failed to load URLs");
+                }
+
+                if (isMounted) {
+                    setUrls(Array.isArray(data) ? data : []);
+                }
+            } catch (error) {
+                if (isMounted) {
+                    showToast("error", error.message || "Failed to load URLs");
+                }
+            } finally {
+                if (isMounted) {
+                    setLoadingUrls(false);
+                }
+            }
+        };
+
+        fetchUrls();
+
+        return () => {
+            isMounted = false;
+        };
+    }, []);
+
+    const shortenUrl = async (e) => {
+        if (e && e.preventDefault) {
+            e.preventDefault();
+        }
         const cleanLongUrl = longUrl.trim();
         const cleanAlias = customAlias.trim();
 
         if (!cleanLongUrl) {
-            setError("Please enter a URL");
+            showToast("error", "Please enter a URL to shorten");
             return;
         }
 
         try {
             setLoading(true);
-            setError("");
-            setMessage("");
 
             const body = {
                 longUrl: cleanLongUrl,
@@ -88,24 +151,28 @@ function App() {
                 shortUrl: data.shortUrl || "",
             });
 
-            setMessage("Your short link is ready!");
+            showToast("success", data.message || "Your short link is ready!");
             setLongUrl("");
             setCustomAlias("");
             setExpiresAt("");
             await loadUrls();
         } catch (error) {
-            setError(error.message || "Failed to shorten URL");
+            showToast("error", error.message || "Failed to shorten URL");
         } finally {
             setLoading(false);
         }
     };
 
-    const copyUrl = async (url) => {
+    const copyUrl = async (url, code = null) => {
         try {
             await navigator.clipboard.writeText(url);
-            setMessage("Short URL copied to clipboard!");
+            setCopiedCode(code || url);
+            showToast("success", "Short URL copied to clipboard!");
+            setTimeout(() => {
+                setCopiedCode(null);
+            }, 2000);
         } catch {
-            setError("Unable to copy URL");
+            showToast("error", "Unable to copy URL to clipboard");
         }
     };
 
@@ -119,9 +186,6 @@ function App() {
         }
 
         try {
-            setError("");
-            setMessage("");
-
             const response = await fetch(
                 `${API_URL}/api/urls/${encodeURIComponent(shortCode)}`,
                 {
@@ -135,7 +199,7 @@ function App() {
                 throw new Error(data.error || "Failed to delete URL");
             }
 
-            setMessage("Short URL deleted successfully!");
+            showToast("success", "Short URL deleted successfully!");
 
             if (createdUrl && createdUrl.shortCode === shortCode) {
                 setCreatedUrl(null);
@@ -143,33 +207,52 @@ function App() {
 
             await loadUrls();
         } catch (error) {
-            setError(error.message || "Failed to delete URL");
+            showToast("error", error.message || "Failed to delete URL");
         }
     };
 
     const startEdit = (url) => {
         setEditingCode(url.shortCode);
         setEditUrl(url.longUrl);
-        setError("");
-        setMessage("");
+        if (url.expiresAt) {
+            const d = new Date(url.expiresAt);
+            const year = d.getFullYear();
+            const month = String(d.getMonth() + 1).padStart(2, "0");
+            const day = String(d.getDate()).padStart(2, "0");
+            const hours = String(d.getHours()).padStart(2, "0");
+            const minutes = String(d.getMinutes()).padStart(2, "0");
+            setEditExpiresAt(`${year}-${month}-${day}T${hours}:${minutes}`);
+        } else {
+            setEditExpiresAt("");
+        }
     };
 
     const cancelEdit = () => {
         setEditingCode(null);
         setEditUrl("");
+        setEditExpiresAt("");
     };
 
     const updateUrl = async (shortCode) => {
         const cleanUrl = editUrl.trim();
 
         if (!cleanUrl) {
-            setError("Please enter a URL");
+            showToast("error", "Please enter a valid destination URL");
             return;
         }
 
         try {
-            setError("");
-            setMessage("");
+            setUpdating(true);
+
+            const body = {
+                longUrl: cleanUrl,
+            };
+
+            if (editExpiresAt) {
+                body.expiresAt = new Date(editExpiresAt).toISOString();
+            } else {
+                body.expiresAt = null;
+            }
 
             const response = await fetch(
                 `${API_URL}/api/urls/${encodeURIComponent(shortCode)}`,
@@ -178,9 +261,7 @@ function App() {
                     headers: {
                         "Content-Type": "application/json",
                     },
-                    body: JSON.stringify({
-                        longUrl: cleanUrl,
-                    }),
+                    body: JSON.stringify(body),
                 }
             );
 
@@ -190,13 +271,16 @@ function App() {
                 throw new Error(data.error || "Failed to update URL");
             }
 
-            setMessage("Short URL updated successfully!");
+            showToast("success", "Short URL updated successfully!");
             setEditingCode(null);
             setEditUrl("");
+            setEditExpiresAt("");
 
             await loadUrls();
         } catch (error) {
-            setError(error.message || "Failed to update URL");
+            showToast("error", error.message || "Failed to update URL");
+        } finally {
+            setUpdating(false);
         }
     };
 
@@ -216,56 +300,67 @@ function App() {
         return new Date(expiresAtValue) <= new Date();
     };
 
-    const fallbackLinks = [
-        {
-            shortCode: "abc123",
-            shortUrl: "https://velora.link/abc123",
-            longUrl: "https://www.behance.net",
-            clicks: 12,
-            expiresAt: null,
-        },
-        {
-            shortCode: "design",
-            shortUrl: "https://velora.link/design",
-            longUrl: "https://dribbble.com",
-            clicks: 8,
-            expiresAt: null,
-        },
-        {
-            shortCode: "project",
-            shortUrl: "https://velora.link/project",
-            longUrl: "https://github.com",
-            clicks: 5,
-            expiresAt: null,
-        },
-        {
-            shortCode: "docs",
-            shortUrl: "https://velora.link/docs",
-            longUrl: "https://docs.example.com",
-            clicks: 3,
-            expiresAt: null,
-        },
-    ];
-
-    const displayUrls = urls.length > 0 ? urls : fallbackLinks;
-
-    const totalClicks = displayUrls.reduce(
+    // Calculate dynamic stats from real urls
+    const totalClicks = urls.reduce(
         (total, url) => total + Number(url.clicks || 0),
         0
     );
 
-    const activeCount = displayUrls.filter(
+    const activeCount = urls.filter(
         (url) => !isExpired(url.expiresAt)
     ).length;
 
-    const expiredCount = displayUrls.filter(
+    const expiredCount = urls.filter(
         (url) => isExpired(url.expiresAt)
     ).length;
 
-    const recentLinks = [...displayUrls].slice(0, 4);
+    // Filter urls according to search query and status tab
+    const filteredUrls = urls.filter((url) => {
+        const query = searchQuery.toLowerCase().trim();
+        const matchesSearch =
+            !query ||
+            url.shortCode.toLowerCase().includes(query) ||
+            url.longUrl.toLowerCase().includes(query);
+
+        if (!matchesSearch) return false;
+
+        if (statusFilter === "active") {
+            return !isExpired(url.expiresAt);
+        } else if (statusFilter === "expired") {
+            return isExpired(url.expiresAt);
+        }
+        return true;
+    });
+
+    const recentLinks = filteredUrls.slice(0, 4);
+    const minDateTime = getMinDateTime();
 
     return (
         <div className="app-shell">
+            {/* Floating Toast Notification Center */}
+            <aside className="toast-container" aria-live="polite" aria-label="Notifications">
+                {toasts.map((toast) => (
+                    <div
+                        key={toast.id}
+                        className={`toast toast-${toast.type}`}
+                        role="alert"
+                    >
+                        <span className="toast-icon">
+                            {toast.type === "success" ? "✓" : "!"}
+                        </span>
+                        <span className="toast-text">{toast.text}</span>
+                        <button
+                            type="button"
+                            className="toast-close"
+                            onClick={() => removeToast(toast.id)}
+                            aria-label="Dismiss notification"
+                        >
+                            ×
+                        </button>
+                    </div>
+                ))}
+            </aside>
+
             <header className="topbar">
                 <div className="brand-wrap">
                     <div className="brand-mark">
@@ -309,6 +404,7 @@ function App() {
                             <button
                                 className="secondary-button"
                                 onClick={loadUrls}
+                                type="button"
                             >
                                 <span className={loadingUrls ? "spin" : ""}>↻</span>
                                 Refresh
@@ -320,7 +416,7 @@ function App() {
                         <div className="quick-stats">
                             <div className="quick-stat">
                                 <span className="stat-label">Links</span>
-                                <strong>{displayUrls.length}</strong>
+                                <strong>{urls.length}</strong>
                             </div>
                             <div className="quick-stat">
                                 <span className="stat-label">Total clicks</span>
@@ -334,54 +430,73 @@ function App() {
                     </div>
                 </section>
 
-                {error && (
-                    <div className="message-box error-message">
-                        <span>!</span>
-                        {error}
-                    </div>
-                )}
-
-                {message && (
-                    <div className="message-box success-message">
-                        <span>✓</span>
-                        {message}
-                    </div>
-                )}
-
                 <section id="shorten" className="create-section">
-                    <div className="create-card">
-                        <div className="url-input-wrapper">
-                            <div className="input-icon">↗</div>
+                    <form className="create-card" onSubmit={shortenUrl}>
+                        <div className="url-input-group">
+                            <label htmlFor="long-url-input">
+                                LONG URL
+                            </label>
 
-                            <input
-                                type="text"
-                                placeholder="Paste your long URL here..."
-                                value={longUrl}
-                                onChange={(e) => setLongUrl(e.target.value)}
-                                onKeyDown={(e) => {
-                                    if (e.key === "Enter") {
-                                        shortenUrl();
-                                    }
-                                }}
-                            />
+                            <div className="url-input-row">
+                                <div className="url-input-wrapper">
+                                    <div className="input-icon" aria-hidden="true">
+                                        <svg
+                                            width="16"
+                                            height="16"
+                                            viewBox="0 0 24 24"
+                                            fill="none"
+                                            stroke="currentColor"
+                                            strokeWidth="2.2"
+                                            strokeLinecap="round"
+                                            strokeLinejoin="round"
+                                        >
+                                            <path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71" />
+                                            <path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71" />
+                                        </svg>
+                                    </div>
 
-                            <button
-                                className="shorten-action"
-                                onClick={shortenUrl}
-                                disabled={loading}
-                            >
-                                {loading ? (
-                                    <>
-                                        <span className="button-spinner" />
-                                        Creating
-                                    </>
-                                ) : (
-                                    <>
-                                        Shorten URL
-                                        <span>→</span>
-                                    </>
-                                )}
-                            </button>
+                                    <input
+                                        id="long-url-input"
+                                        type="url"
+                                        placeholder="https://example.com/my-long-url..."
+                                        value={longUrl}
+                                        onChange={(e) => setLongUrl(e.target.value)}
+                                        autoCapitalize="none"
+                                        autoCorrect="off"
+                                        spellCheck={false}
+                                    />
+
+                                    {longUrl && (
+                                        <button
+                                            type="button"
+                                            className="clear-url-btn"
+                                            onClick={() => setLongUrl("")}
+                                            aria-label="Clear URL"
+                                            title="Clear URL"
+                                        >
+                                            ×
+                                        </button>
+                                    )}
+                                </div>
+
+                                <button
+                                    className="shorten-action"
+                                    disabled={loading}
+                                    type="submit"
+                                >
+                                    {loading ? (
+                                        <>
+                                            <span className="button-spinner" />
+                                            Creating
+                                        </>
+                                    ) : (
+                                        <>
+                                            Shorten URL
+                                            <span>→</span>
+                                        </>
+                                    )}
+                                </button>
+                            </div>
                         </div>
 
                         <div className="advanced-options">
@@ -389,7 +504,7 @@ function App() {
                                 <label>Custom alias</label>
 
                                 <div className="small-input">
-                                    <span>velora.link/</span>
+                                    <span>{API_DOMAIN}/</span>
                                     <input
                                         type="text"
                                         placeholder="my-link"
@@ -405,12 +520,13 @@ function App() {
                                 <input
                                     className="date-input"
                                     type="datetime-local"
+                                    min={minDateTime}
                                     value={expiresAt}
                                     onChange={(e) => setExpiresAt(e.target.value)}
                                 />
                             </div>
                         </div>
-                    </div>
+                    </form>
                 </section>
 
                 {createdUrl && (
@@ -427,10 +543,11 @@ function App() {
 
                         <div className="result-actions">
                             <button
-                                className="copy-result"
-                                onClick={() => copyUrl(createdUrl.shortUrl)}
+                                type="button"
+                                className={`copy-result ${copiedCode === (createdUrl.shortCode || "created") ? "copied" : ""}`}
+                                onClick={() => copyUrl(createdUrl.shortUrl, createdUrl.shortCode || "created")}
                             >
-                                Copy link
+                                {copiedCode === (createdUrl.shortCode || "created") ? "Copied! ✓" : "Copy link"}
                             </button>
 
                             <a
@@ -444,7 +561,6 @@ function App() {
                         </div>
                     </section>
                 )}
-
                 <section id="how-it-works" className="how-section">
                     <div className="section-header">
                         <h2>How it works</h2>
@@ -506,57 +622,143 @@ function App() {
 
                 <section id="recent-links" className="recent-section">
                     <div className="section-header">
-                        <h2>Your recent links</h2>
-                        <button
-                            className="view-all-button"
-                            onClick={() => setShowAllLinks((current) => !current)}
-                        >
-                            {showAllLinks ? "Hide all" : "View all"}
-                            <span>→</span>
-                        </button>
+                        <div>
+                            <h2>My Links</h2>
+                            <p>Manage, track, and edit your shortened links in one place.</p>
+                        </div>
+
+                        {urls.length > 0 && (
+                            <button
+                                type="button"
+                                className="view-all-button"
+                                onClick={() => setShowAllLinks((current) => !current)}
+                            >
+                                {showAllLinks ? "Hide full table" : "View full table"}
+                                <span>{showAllLinks ? "↑" : "↓"}</span>
+                            </button>
+                        )}
                     </div>
+
+                    {/* Search & Status Filter Toolbar */}
+                    {urls.length > 0 && (
+                        <div className="links-toolbar">
+                            <div className="search-box">
+                                <span className="search-icon">🔍</span>
+                                <input
+                                    type="text"
+                                    placeholder="Search by short code or original URL..."
+                                    value={searchQuery}
+                                    onChange={(e) => setSearchQuery(e.target.value)}
+                                />
+                                {searchQuery && (
+                                    <button
+                                        type="button"
+                                        className="search-clear-btn"
+                                        onClick={() => setSearchQuery("")}
+                                        title="Clear search"
+                                    >
+                                        ×
+                                    </button>
+                                )}
+                            </div>
+
+                            <div className="status-filter-group" role="tablist" aria-label="Filter links by status">
+                                <button
+                                    type="button"
+                                    role="tab"
+                                    aria-selected={statusFilter === "all"}
+                                    className={`filter-btn ${statusFilter === "all" ? "active" : ""}`}
+                                    onClick={() => setStatusFilter("all")}
+                                >
+                                    All ({urls.length})
+                                </button>
+                                <button
+                                    type="button"
+                                    role="tab"
+                                    aria-selected={statusFilter === "active"}
+                                    className={`filter-btn ${statusFilter === "active" ? "active" : ""}`}
+                                    onClick={() => setStatusFilter("active")}
+                                >
+                                    Active ({activeCount})
+                                </button>
+                                <button
+                                    type="button"
+                                    role="tab"
+                                    aria-selected={statusFilter === "expired"}
+                                    className={`filter-btn ${statusFilter === "expired" ? "active" : ""}`}
+                                    onClick={() => setStatusFilter("expired")}
+                                >
+                                    Expired ({expiredCount})
+                                </button>
+                            </div>
+                        </div>
+                    )}
 
                     {loadingUrls ? (
                         <div className="empty-state">
                             <div className="loading-orbit">V</div>
                             <h3>Loading your links...</h3>
                         </div>
+                    ) : urls.length === 0 ? (
+                        <div className="empty-state">
+                            <div className="empty-icon">🔗</div>
+                            <h3>No short links yet</h3>
+                            <p>Paste a long URL above to create your first short link and start tracking clicks.</p>
+                        </div>
+                    ) : filteredUrls.length === 0 ? (
+                        <div className="empty-state">
+                            <div className="empty-icon">🔍</div>
+                            <h3>No matching links found</h3>
+                            <p>Try adjusting your search query or switching the status filter.</p>
+                        </div>
                     ) : (
                         <>
                             <div className="recent-list">
                                 {recentLinks.map((url, index) => {
                                     const expired = isExpired(url.expiresAt);
+                                    const isCopied = copiedCode === url.shortCode;
 
                                     return (
                                         <div key={url.shortCode} className="recent-item">
-                                            <div className="recent-index">0{index + 1}</div>
+                                            <div className="recent-left">
+                                                <div className="recent-index">0{index + 1}</div>
 
-                                            <div className="recent-icon">↗</div>
+                                                <div className="recent-main">
+                                                    <div className="recent-top-row">
+                                                        <a
+                                                            href={url.shortUrl}
+                                                            target="_blank"
+                                                            rel="noopener noreferrer"
+                                                            className="short-link"
+                                                        >
+                                                            {url.shortCode}
+                                                        </a>
+                                                        <span className={`status ${expired ? "expired" : "active"}`}>
+                                                            <span />
+                                                            {expired ? "Expired" : "Active"}
+                                                        </span>
+                                                    </div>
 
-                                            <div className="recent-main">
-                                                <a
-                                                    href={url.shortUrl}
-                                                    target="_blank"
-                                                    rel="noopener noreferrer"
-                                                    className="short-link"
+                                                    <span className="recent-url" title={url.longUrl}>
+                                                        {url.longUrl}
+                                                    </span>
+                                                </div>
+                                            </div>
+
+                                            <div className="recent-right">
+                                                <div className="recent-click-info">
+                                                    <strong>{url.clicks || 0}</strong>
+                                                    <span>clicks</span>
+                                                </div>
+
+                                                <button
+                                                    type="button"
+                                                    className={`copy-button ${isCopied ? "copied" : ""}`}
+                                                    onClick={() => copyUrl(url.shortUrl, url.shortCode)}
                                                 >
-                                                    {url.shortCode}
-                                                </a>
-
-                                                <span className="recent-url" title={url.longUrl}>
-                                                    {url.longUrl}
-                                                </span>
+                                                    {isCopied ? "Copied! ✓" : "Copy"}
+                                                </button>
                                             </div>
-
-                                            <div className="recent-click-info">
-                                                <strong>{url.clicks || 0}</strong>
-                                                <span>clicks</span>
-                                            </div>
-
-                                            <span className={`status ${expired ? "expired" : "active"}`}>
-                                                <span />
-                                                {expired ? "Expired" : "Active"}
-                                            </span>
                                         </div>
                                     );
                                 })}
@@ -570,7 +772,9 @@ function App() {
                                             <h3>All your links</h3>
                                         </div>
 
-                                        <span className="link-count">{urls.length} links</span>
+                                        <span className="link-count">
+                                            Showing {filteredUrls.length} of {urls.length} links
+                                        </span>
                                     </div>
 
                                     <div className="table-container">
@@ -587,8 +791,10 @@ function App() {
                                             </thead>
 
                                             <tbody>
-                                                {displayUrls.map((url) => {
+                                                {filteredUrls.map((url) => {
                                                     const expired = isExpired(url.expiresAt);
+                                                    const isEditing = editingCode === url.shortCode;
+                                                    const isCopied = copiedCode === url.shortCode;
 
                                                     return (
                                                         <tr key={url.shortCode}>
@@ -604,25 +810,55 @@ function App() {
                                                             </td>
 
                                                             <td>
-                                                                {editingCode === url.shortCode ? (
+                                                                {isEditing ? (
                                                                     <div className="edit-box">
-                                                                        <input
-                                                                            type="text"
-                                                                            value={editUrl}
-                                                                            onChange={(e) => setEditUrl(e.target.value)}
-                                                                        />
+                                                                        <div className="edit-field">
+                                                                            <label>Destination URL</label>
+                                                                            <input
+                                                                                type="text"
+                                                                                value={editUrl}
+                                                                                placeholder="https://..."
+                                                                                onChange={(e) => setEditUrl(e.target.value)}
+                                                                            />
+                                                                        </div>
+
+                                                                        <div className="edit-field">
+                                                                            <label>Expiration (Optional)</label>
+                                                                            <div className="edit-date-wrapper">
+                                                                                <input
+                                                                                    type="datetime-local"
+                                                                                    min={minDateTime}
+                                                                                    value={editExpiresAt}
+                                                                                    onChange={(e) => setEditExpiresAt(e.target.value)}
+                                                                                />
+                                                                                {editExpiresAt && (
+                                                                                    <button
+                                                                                        type="button"
+                                                                                        className="clear-date-btn"
+                                                                                        onClick={() => setEditExpiresAt("")}
+                                                                                        title="Remove expiration date"
+                                                                                    >
+                                                                                        Clear
+                                                                                    </button>
+                                                                                )}
+                                                                            </div>
+                                                                        </div>
 
                                                                         <div className="edit-actions">
                                                                             <button
+                                                                                type="button"
                                                                                 className="save-button"
                                                                                 onClick={() => updateUrl(url.shortCode)}
+                                                                                disabled={updating}
                                                                             >
-                                                                                Save
+                                                                                {updating ? "Saving..." : "Save"}
                                                                             </button>
 
                                                                             <button
+                                                                                type="button"
                                                                                 className="cancel-button"
                                                                                 onClick={cancelEdit}
+                                                                                disabled={updating}
                                                                             >
                                                                                 Cancel
                                                                             </button>
@@ -651,21 +887,25 @@ function App() {
                                                             <td>
                                                                 <div className="actions">
                                                                     <button
-                                                                        className="copy-button"
-                                                                        onClick={() => copyUrl(url.shortUrl)}
+                                                                        type="button"
+                                                                        className={`copy-button ${isCopied ? "copied" : ""}`}
+                                                                        onClick={() => copyUrl(url.shortUrl, url.shortCode)}
                                                                     >
-                                                                        Copy
+                                                                        {isCopied ? "Copied! ✓" : "Copy"}
                                                                     </button>
 
-                                                                    <button
-                                                                        className="edit-button"
-                                                                        onClick={() => startEdit(url)}
-                                                                        disabled={editingCode === url.shortCode}
-                                                                    >
-                                                                        Edit
-                                                                    </button>
+                                                                    {!isEditing && (
+                                                                        <button
+                                                                            type="button"
+                                                                            className="edit-button"
+                                                                            onClick={() => startEdit(url)}
+                                                                        >
+                                                                            Edit
+                                                                        </button>
+                                                                    )}
 
                                                                     <button
+                                                                        type="button"
                                                                         className="delete-button"
                                                                         onClick={() => deleteUrl(url.shortCode)}
                                                                     >
