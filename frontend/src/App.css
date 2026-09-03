@@ -936,7 +936,8 @@
     color: var(--brand);
     font-weight: 700;
     text-decoration: none;
-    word-break: break-all;
+    white-space: nowrap;
+    word-break: normal;
     font-size: 1rem;
 }
 
@@ -1141,6 +1142,23 @@ th {
 td {
     color: var(--text);
     font-size: 0.95rem;
+}
+
+/* Short URL Column */
+.table-container th:first-child,
+.table-container td:first-child {
+    min-width: 130px;
+    white-space: nowrap;
+}
+
+.table-container .short-link {
+    display: inline-block;
+    white-space: nowrap;
+    word-break: normal;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    max-width: 170px;
+    vertical-align: middle;
 }
 
 /* Sticky Actions Column */

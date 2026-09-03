@@ -23,6 +23,7 @@ function App() {
     const [urls, setUrls] = useState([]);
     const [loading, setLoading] = useState(false);
     const [loadingUrls, setLoadingUrls] = useState(false);
+    const [isRefreshing, setIsRefreshing] = useState(false);
     const [createdUrl, setCreatedUrl] = useState(null);
     const [showAllLinks, setShowAllLinks] = useState(false);
 
@@ -71,6 +72,21 @@ function App() {
             setLoadingUrls(false);
         }
     }, []);
+
+    const handleRefresh = async () => {
+        if (isRefreshing || loadingUrls) return;
+        setIsRefreshing(true);
+        const startTime = Date.now();
+        try {
+            await loadUrls();
+        } finally {
+            const elapsed = Date.now() - startTime;
+            const remaining = Math.max(0, 500 - elapsed);
+            setTimeout(() => {
+                setIsRefreshing(false);
+            }, remaining);
+        }
+    };
 
     useEffect(() => {
         let isMounted = true;
@@ -402,12 +418,16 @@ function App() {
                             </a>
 
                             <button
-                                className="secondary-button"
-                                onClick={loadUrls}
+                                className={`secondary-button refresh-btn ${isRefreshing ? "refreshing" : ""}`}
+                                onClick={handleRefresh}
+                                disabled={isRefreshing}
                                 type="button"
+                                title="Refresh links and statistics"
                             >
-                                <span className={loadingUrls ? "spin" : ""}>↻</span>
-                                Refresh
+                                <span className={`refresh-icon ${isRefreshing ? "spin" : ""}`} aria-hidden="true">
+                                    ↻
+                                </span>
+                                {isRefreshing ? "Refreshing..." : "Refresh"}
                             </button>
                         </div>
                     </div>
@@ -804,6 +824,7 @@ function App() {
                                                                     target="_blank"
                                                                     rel="noopener noreferrer"
                                                                     className="short-link"
+                                                                    title={url.shortCode}
                                                                 >
                                                                     {url.shortCode}
                                                                 </a>

@@ -76,7 +76,6 @@ url-shortener/
 │   ├── utils/
 │   │   └── base62.js
 │   ├── index.js
-│   ├── check_db_e.js
 │   ├── package.json
 │   └── package-lock.json
 │
