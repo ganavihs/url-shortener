@@ -8,7 +8,11 @@ const encodeBase62 = require("./utils/base62");
 const app = express();
 
 const PORT = process.env.PORT || 3000;
-const BASE_URL = (process.env.BASE_URL || `http://localhost:${PORT}`).replace(/\/$/, "");
+const BASE_URL = (
+    process.env.BASE_URL ||
+    process.env.RENDER_EXTERNAL_URL ||
+    `http://localhost:${PORT}`
+).replace(/\/$/, "");
 
 // ======================================================
 // CORS

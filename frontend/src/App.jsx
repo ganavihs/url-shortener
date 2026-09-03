@@ -4,6 +4,15 @@ import "./App.css";
 const API_URL = import.meta.env.VITE_API_URL || "http://localhost:3000";
 const API_DOMAIN = API_URL.replace(/^https?:\/\//, "");
 
+// Helper to ensure short URLs point to the live API URL if the backend response contained localhost
+const getShortUrl = (urlObj) => {
+    if (!urlObj) return "";
+    if (urlObj.shortUrl && !urlObj.shortUrl.includes("localhost")) {
+        return urlObj.shortUrl;
+    }
+    return `${API_URL}/${urlObj.shortCode}`;
+};
+
 // Helper to get minimum local datetime string (YYYY-MM-DDTHH:MM) for datetime-local inputs
 const getMinDateTime = () => {
     const now = new Date();
@@ -556,8 +565,8 @@ function App() {
                         <div className="result-content">
                             <span>Your short link is ready</span>
 
-                            <a href={createdUrl.shortUrl} target="_blank" rel="noreferrer">
-                                {createdUrl.shortUrl}
+                            <a href={getShortUrl(createdUrl)} target="_blank" rel="noreferrer">
+                                {getShortUrl(createdUrl)}
                             </a>
                         </div>
 
@@ -565,13 +574,13 @@ function App() {
                             <button
                                 type="button"
                                 className={`copy-result ${copiedCode === (createdUrl.shortCode || "created") ? "copied" : ""}`}
-                                onClick={() => copyUrl(createdUrl.shortUrl, createdUrl.shortCode || "created")}
+                                onClick={() => copyUrl(getShortUrl(createdUrl), createdUrl.shortCode || "created")}
                             >
                                 {copiedCode === (createdUrl.shortCode || "created") ? "Copied! ✓" : "Copy link"}
                             </button>
 
                             <a
-                                href={createdUrl.shortUrl}
+                                href={getShortUrl(createdUrl)}
                                 target="_blank"
                                 rel="noreferrer"
                                 className="open-result"
@@ -746,7 +755,7 @@ function App() {
                                                 <div className="recent-main">
                                                     <div className="recent-top-row">
                                                         <a
-                                                            href={url.shortUrl}
+                                                            href={getShortUrl(url)}
                                                             target="_blank"
                                                             rel="noopener noreferrer"
                                                             className="short-link"
@@ -774,7 +783,7 @@ function App() {
                                                 <button
                                                     type="button"
                                                     className={`copy-button ${isCopied ? "copied" : ""}`}
-                                                    onClick={() => copyUrl(url.shortUrl, url.shortCode)}
+                                                    onClick={() => copyUrl(getShortUrl(url), url.shortCode)}
                                                 >
                                                     {isCopied ? "Copied! ✓" : "Copy"}
                                                 </button>
@@ -820,7 +829,7 @@ function App() {
                                                         <tr key={url.shortCode}>
                                                             <td>
                                                                 <a
-                                                                    href={url.shortUrl}
+                                                                    href={getShortUrl(url)}
                                                                     target="_blank"
                                                                     rel="noopener noreferrer"
                                                                     className="short-link"
@@ -910,7 +919,7 @@ function App() {
                                                                     <button
                                                                         type="button"
                                                                         className={`copy-button ${isCopied ? "copied" : ""}`}
-                                                                        onClick={() => copyUrl(url.shortUrl, url.shortCode)}
+                                                                        onClick={() => copyUrl(getShortUrl(url), url.shortCode)}
                                                                     >
                                                                         {isCopied ? "Copied! ✓" : "Copy"}
                                                                     </button>
