@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useState } from "react";
 import "./App.css";
 
 const API_URL = import.meta.env.VITE_API_URL || "http://localhost:3000";
@@ -29,28 +29,14 @@ function App() {
     const [customAlias, setCustomAlias] = useState("");
     const [expiresAt, setExpiresAt] = useState("");
 
-    const [urls, setUrls] = useState([]);
     const [loading, setLoading] = useState(false);
-    const [loadingUrls, setLoadingUrls] = useState(false);
-    const [isRefreshing, setIsRefreshing] = useState(false);
     const [createdUrl, setCreatedUrl] = useState(null);
-    const [showAllLinks, setShowAllLinks] = useState(false);
-
-    // Search and filtering state
-    const [searchQuery, setSearchQuery] = useState("");
-    const [statusFilter, setStatusFilter] = useState("all"); // "all" | "active" | "expired"
 
     // Toast notification state
     const [toasts, setToasts] = useState([]);
 
-    // Copy feedback state (tracks the specific shortCode or "created" that was copied)
+    // Copy feedback state
     const [copiedCode, setCopiedCode] = useState(null);
-
-    // Editing state (supports both URL and expiration date)
-    const [editingCode, setEditingCode] = useState(null);
-    const [editUrl, setEditUrl] = useState("");
-    const [editExpiresAt, setEditExpiresAt] = useState("");
-    const [updating, setUpdating] = useState(false);
 
     const showToast = (type, text) => {
         const id = Date.now() + Math.random().toString(36).substring(2, 9);
@@ -63,72 +49,6 @@ function App() {
     const removeToast = (id) => {
         setToasts((prev) => prev.filter((t) => t.id !== id));
     };
-
-    const loadUrls = useCallback(async () => {
-        try {
-            setLoadingUrls(true);
-            const response = await fetch(`${API_URL}/api/urls`);
-            const data = await response.json();
-
-            if (!response.ok) {
-                throw new Error(data.error || "Failed to load URLs");
-            }
-
-            setUrls(Array.isArray(data) ? data : []);
-        } catch (error) {
-            showToast("error", error.message || "Failed to load URLs");
-        } finally {
-            setLoadingUrls(false);
-        }
-    }, []);
-
-    const handleRefresh = async () => {
-        if (isRefreshing || loadingUrls) return;
-        setIsRefreshing(true);
-        const startTime = Date.now();
-        try {
-            await loadUrls();
-        } finally {
-            const elapsed = Date.now() - startTime;
-            const remaining = Math.max(0, 500 - elapsed);
-            setTimeout(() => {
-                setIsRefreshing(false);
-            }, remaining);
-        }
-    };
-
-    useEffect(() => {
-        let isMounted = true;
-        const fetchUrls = async () => {
-            try {
-                setLoadingUrls(true);
-                const response = await fetch(`${API_URL}/api/urls`);
-                const data = await response.json();
-
-                if (!response.ok) {
-                    throw new Error(data.error || "Failed to load URLs");
-                }
-
-                if (isMounted) {
-                    setUrls(Array.isArray(data) ? data : []);
-                }
-            } catch (error) {
-                if (isMounted) {
-                    showToast("error", error.message || "Failed to load URLs");
-                }
-            } finally {
-                if (isMounted) {
-                    setLoadingUrls(false);
-                }
-            }
-        };
-
-        fetchUrls();
-
-        return () => {
-            isMounted = false;
-        };
-    }, []);
 
     const shortenUrl = async (e) => {
         if (e && e.preventDefault) {
@@ -180,7 +100,6 @@ function App() {
             setLongUrl("");
             setCustomAlias("");
             setExpiresAt("");
-            await loadUrls();
         } catch (error) {
             showToast("error", error.message || "Failed to shorten URL");
         } finally {
@@ -201,163 +120,6 @@ function App() {
         }
     };
 
-    const deleteUrl = async (shortCode) => {
-        const confirmed = window.confirm(
-            `Are you sure you want to delete "${shortCode}"?`
-        );
-
-        if (!confirmed) {
-            return;
-        }
-
-        try {
-            const response = await fetch(
-                `${API_URL}/api/urls/${encodeURIComponent(shortCode)}`,
-                {
-                    method: "DELETE",
-                }
-            );
-
-            const data = await response.json();
-
-            if (!response.ok) {
-                throw new Error(data.error || "Failed to delete URL");
-            }
-
-            showToast("success", "Short URL deleted successfully!");
-
-            if (createdUrl && createdUrl.shortCode === shortCode) {
-                setCreatedUrl(null);
-            }
-
-            await loadUrls();
-        } catch (error) {
-            showToast("error", error.message || "Failed to delete URL");
-        }
-    };
-
-    const startEdit = (url) => {
-        setEditingCode(url.shortCode);
-        setEditUrl(url.longUrl);
-        if (url.expiresAt) {
-            const d = new Date(url.expiresAt);
-            const year = d.getFullYear();
-            const month = String(d.getMonth() + 1).padStart(2, "0");
-            const day = String(d.getDate()).padStart(2, "0");
-            const hours = String(d.getHours()).padStart(2, "0");
-            const minutes = String(d.getMinutes()).padStart(2, "0");
-            setEditExpiresAt(`${year}-${month}-${day}T${hours}:${minutes}`);
-        } else {
-            setEditExpiresAt("");
-        }
-    };
-
-    const cancelEdit = () => {
-        setEditingCode(null);
-        setEditUrl("");
-        setEditExpiresAt("");
-    };
-
-    const updateUrl = async (shortCode) => {
-        const cleanUrl = editUrl.trim();
-
-        if (!cleanUrl) {
-            showToast("error", "Please enter a valid destination URL");
-            return;
-        }
-
-        try {
-            setUpdating(true);
-
-            const body = {
-                longUrl: cleanUrl,
-            };
-
-            if (editExpiresAt) {
-                body.expiresAt = new Date(editExpiresAt).toISOString();
-            } else {
-                body.expiresAt = null;
-            }
-
-            const response = await fetch(
-                `${API_URL}/api/urls/${encodeURIComponent(shortCode)}`,
-                {
-                    method: "PUT",
-                    headers: {
-                        "Content-Type": "application/json",
-                    },
-                    body: JSON.stringify(body),
-                }
-            );
-
-            const data = await response.json();
-
-            if (!response.ok) {
-                throw new Error(data.error || "Failed to update URL");
-            }
-
-            showToast("success", "Short URL updated successfully!");
-            setEditingCode(null);
-            setEditUrl("");
-            setEditExpiresAt("");
-
-            await loadUrls();
-        } catch (error) {
-            showToast("error", error.message || "Failed to update URL");
-        } finally {
-            setUpdating(false);
-        }
-    };
-
-    const formatDate = (date) => {
-        if (!date) {
-            return "Never";
-        }
-
-        return new Date(date).toLocaleString();
-    };
-
-    const isExpired = (expiresAtValue) => {
-        if (!expiresAtValue) {
-            return false;
-        }
-
-        return new Date(expiresAtValue) <= new Date();
-    };
-
-    // Calculate dynamic stats from real urls
-    const totalClicks = urls.reduce(
-        (total, url) => total + Number(url.clicks || 0),
-        0
-    );
-
-    const activeCount = urls.filter(
-        (url) => !isExpired(url.expiresAt)
-    ).length;
-
-    const expiredCount = urls.filter(
-        (url) => isExpired(url.expiresAt)
-    ).length;
-
-    // Filter urls according to search query and status tab
-    const filteredUrls = urls.filter((url) => {
-        const query = searchQuery.toLowerCase().trim();
-        const matchesSearch =
-            !query ||
-            url.shortCode.toLowerCase().includes(query) ||
-            url.longUrl.toLowerCase().includes(query);
-
-        if (!matchesSearch) return false;
-
-        if (statusFilter === "active") {
-            return !isExpired(url.expiresAt);
-        } else if (statusFilter === "expired") {
-            return isExpired(url.expiresAt);
-        }
-        return true;
-    });
-
-    const recentLinks = filteredUrls.slice(0, 4);
     const minDateTime = getMinDateTime();
 
     return (
@@ -400,7 +162,7 @@ function App() {
                 <nav className="topnav" aria-label="Main navigation">
                     <a href="#shorten">Shorten</a>
                     <a href="#how-it-works">How it works</a>
-                    <a href="#recent-links">My links</a>
+                    <a href="#features">Features</a>
                 </nav>
 
                 <div className="header-actions">
@@ -417,7 +179,7 @@ function App() {
                         <h1>Turn long URLs into simple, shareable links.</h1>
 
                         <p>
-                            Create custom short links instantly, set expiration dates, and track click activity in one clean interface.
+                            Create custom short links instantly, set optional expiration dates, and share anywhere with one clean interface.
                         </p>
 
                         <div className="hero-actions">
@@ -425,35 +187,22 @@ function App() {
                                 Create a link
                                 <span className="arrow">→</span>
                             </a>
-
-                            <button
-                                className={`secondary-button refresh-btn ${isRefreshing ? "refreshing" : ""}`}
-                                onClick={handleRefresh}
-                                disabled={isRefreshing}
-                                type="button"
-                                title="Refresh links and statistics"
-                            >
-                                <span className={`refresh-icon ${isRefreshing ? "spin" : ""}`} aria-hidden="true">
-                                    ↻
-                                </span>
-                                {isRefreshing ? "Refreshing..." : "Refresh"}
-                            </button>
                         </div>
                     </div>
 
                     <div className="hero-visual">
                         <div className="quick-stats">
                             <div className="quick-stat">
-                                <span className="stat-label">Links</span>
-                                <strong>{urls.length}</strong>
+                                <span className="stat-label">Fast & Instant</span>
+                                <strong>⚡</strong>
                             </div>
                             <div className="quick-stat">
-                                <span className="stat-label">Total clicks</span>
-                                <strong>{totalClicks}</strong>
+                                <span className="stat-label">Base62 Safe</span>
+                                <strong>🔒</strong>
                             </div>
                             <div className="quick-stat">
-                                <span className="stat-label">Active</span>
-                                <strong>{activeCount}</strong>
+                                <span className="stat-label">Custom Aliases</span>
+                                <strong>✨</strong>
                             </div>
                         </div>
                     </div>
@@ -590,6 +339,7 @@ function App() {
                         </div>
                     </section>
                 )}
+
                 <section id="how-it-works" className="how-section">
                     <div className="section-header">
                         <h2>How it works</h2>
@@ -616,23 +366,23 @@ function App() {
                             <div className="step-number">3</div>
                             <h3>Share & track</h3>
                             <p>
-                                Copy your link and share it anywhere. Watch click counts update in real time.
+                                Copy your link and share it anywhere. Clicks are automatically recorded upon every visit.
                             </p>
                         </div>
                     </div>
                 </section>
 
-                <section className="features-section">
+                <section id="features" className="features-section">
                     <div className="section-header">
                         <h2>Why Velora Links</h2>
-                        <p>Built for creators and teams who value simplicity and reliability.</p>
+                        <p>Built for creators and teams who value simplicity, speed, and privacy.</p>
                     </div>
 
                     <div className="features-grid">
                         <div className="feature-card">
                             <div className="feature-icon">⚙</div>
                             <h3>Simple to use</h3>
-                            <p>Create short links in seconds. No complex setup, no unnecessary features.</p>
+                            <p>Create short links in seconds. No complex setup, no accounts required.</p>
                         </div>
 
                         <div className="feature-card">
@@ -642,317 +392,11 @@ function App() {
                         </div>
 
                         <div className="feature-card">
-                            <div className="feature-icon">📊</div>
-                            <h3>Real-time insights</h3>
-                            <p>Track every click and see exactly how your links perform across channels.</p>
+                            <div className="feature-icon">🔒</div>
+                            <h3>Private & secure</h3>
+                            <p>Your links belong to you. No public tables, tracking pixels, or intrusive ads.</p>
                         </div>
                     </div>
-                </section>
-
-                <section id="recent-links" className="recent-section">
-                    <div className="section-header">
-                        <div>
-                            <h2>My Links</h2>
-                            <p>Manage, track, and edit your shortened links in one place.</p>
-                        </div>
-
-                        {urls.length > 0 && (
-                            <button
-                                type="button"
-                                className="view-all-button"
-                                onClick={() => setShowAllLinks((current) => !current)}
-                            >
-                                {showAllLinks ? "Hide full table" : "View full table"}
-                                <span>{showAllLinks ? "↑" : "↓"}</span>
-                            </button>
-                        )}
-                    </div>
-
-                    {/* Search & Status Filter Toolbar */}
-                    {urls.length > 0 && (
-                        <div className="links-toolbar">
-                            <div className="search-box">
-                                <span className="search-icon">🔍</span>
-                                <input
-                                    type="text"
-                                    placeholder="Search by short code or original URL..."
-                                    value={searchQuery}
-                                    onChange={(e) => setSearchQuery(e.target.value)}
-                                />
-                                {searchQuery && (
-                                    <button
-                                        type="button"
-                                        className="search-clear-btn"
-                                        onClick={() => setSearchQuery("")}
-                                        title="Clear search"
-                                    >
-                                        ×
-                                    </button>
-                                )}
-                            </div>
-
-                            <div className="status-filter-group" role="tablist" aria-label="Filter links by status">
-                                <button
-                                    type="button"
-                                    role="tab"
-                                    aria-selected={statusFilter === "all"}
-                                    className={`filter-btn ${statusFilter === "all" ? "active" : ""}`}
-                                    onClick={() => setStatusFilter("all")}
-                                >
-                                    All ({urls.length})
-                                </button>
-                                <button
-                                    type="button"
-                                    role="tab"
-                                    aria-selected={statusFilter === "active"}
-                                    className={`filter-btn ${statusFilter === "active" ? "active" : ""}`}
-                                    onClick={() => setStatusFilter("active")}
-                                >
-                                    Active ({activeCount})
-                                </button>
-                                <button
-                                    type="button"
-                                    role="tab"
-                                    aria-selected={statusFilter === "expired"}
-                                    className={`filter-btn ${statusFilter === "expired" ? "active" : ""}`}
-                                    onClick={() => setStatusFilter("expired")}
-                                >
-                                    Expired ({expiredCount})
-                                </button>
-                            </div>
-                        </div>
-                    )}
-
-                    {loadingUrls ? (
-                        <div className="empty-state">
-                            <div className="loading-orbit">V</div>
-                            <h3>Loading your links...</h3>
-                        </div>
-                    ) : urls.length === 0 ? (
-                        <div className="empty-state">
-                            <div className="empty-icon">🔗</div>
-                            <h3>No short links yet</h3>
-                            <p>Paste a long URL above to create your first short link and start tracking clicks.</p>
-                        </div>
-                    ) : filteredUrls.length === 0 ? (
-                        <div className="empty-state">
-                            <div className="empty-icon">🔍</div>
-                            <h3>No matching links found</h3>
-                            <p>Try adjusting your search query or switching the status filter.</p>
-                        </div>
-                    ) : (
-                        <>
-                            <div className="recent-list">
-                                {recentLinks.map((url, index) => {
-                                    const expired = isExpired(url.expiresAt);
-                                    const isCopied = copiedCode === url.shortCode;
-
-                                    return (
-                                        <div key={url.shortCode} className="recent-item">
-                                            <div className="recent-left">
-                                                <div className="recent-index">0{index + 1}</div>
-
-                                                <div className="recent-main">
-                                                    <div className="recent-top-row">
-                                                        <a
-                                                            href={getShortUrl(url)}
-                                                            target="_blank"
-                                                            rel="noopener noreferrer"
-                                                            className="short-link"
-                                                        >
-                                                            {url.shortCode}
-                                                        </a>
-                                                        <span className={`status ${expired ? "expired" : "active"}`}>
-                                                            <span />
-                                                            {expired ? "Expired" : "Active"}
-                                                        </span>
-                                                    </div>
-
-                                                    <span className="recent-url" title={url.longUrl}>
-                                                        {url.longUrl}
-                                                    </span>
-                                                </div>
-                                            </div>
-
-                                            <div className="recent-right">
-                                                <div className="recent-click-info">
-                                                    <strong>{url.clicks || 0}</strong>
-                                                    <span>clicks</span>
-                                                </div>
-
-                                                <button
-                                                    type="button"
-                                                    className={`copy-button ${isCopied ? "copied" : ""}`}
-                                                    onClick={() => copyUrl(getShortUrl(url), url.shortCode)}
-                                                >
-                                                    {isCopied ? "Copied! ✓" : "Copy"}
-                                                </button>
-                                            </div>
-                                        </div>
-                                    );
-                                })}
-                            </div>
-
-                            {showAllLinks && (
-                                <div className="all-links-panel">
-                                    <div className="all-links-header">
-                                        <div>
-                                            <span className="section-label">URL LIBRARY</span>
-                                            <h3>All your links</h3>
-                                        </div>
-
-                                        <span className="link-count">
-                                            Showing {filteredUrls.length} of {urls.length} links
-                                        </span>
-                                    </div>
-
-                                    <div className="table-container">
-                                        <table>
-                                            <thead>
-                                                <tr>
-                                                    <th>Short URL</th>
-                                                    <th>Original URL</th>
-                                                    <th>Clicks</th>
-                                                    <th>Expires</th>
-                                                    <th>Status</th>
-                                                    <th>Actions</th>
-                                                </tr>
-                                            </thead>
-
-                                            <tbody>
-                                                {filteredUrls.map((url) => {
-                                                    const expired = isExpired(url.expiresAt);
-                                                    const isEditing = editingCode === url.shortCode;
-                                                    const isCopied = copiedCode === url.shortCode;
-
-                                                    return (
-                                                        <tr key={url.shortCode}>
-                                                            <td>
-                                                                <a
-                                                                    href={getShortUrl(url)}
-                                                                    target="_blank"
-                                                                    rel="noopener noreferrer"
-                                                                    className="short-link"
-                                                                    title={url.shortCode}
-                                                                >
-                                                                    {url.shortCode}
-                                                                </a>
-                                                            </td>
-
-                                                            <td>
-                                                                {isEditing ? (
-                                                                    <div className="edit-box">
-                                                                        <div className="edit-field">
-                                                                            <label>Destination URL</label>
-                                                                            <input
-                                                                                type="text"
-                                                                                value={editUrl}
-                                                                                placeholder="https://..."
-                                                                                onChange={(e) => setEditUrl(e.target.value)}
-                                                                            />
-                                                                        </div>
-
-                                                                        <div className="edit-field">
-                                                                            <label>Expiration (Optional)</label>
-                                                                            <div className="edit-date-wrapper">
-                                                                                <input
-                                                                                    type="datetime-local"
-                                                                                    min={minDateTime}
-                                                                                    value={editExpiresAt}
-                                                                                    onChange={(e) => setEditExpiresAt(e.target.value)}
-                                                                                />
-                                                                                {editExpiresAt && (
-                                                                                    <button
-                                                                                        type="button"
-                                                                                        className="clear-date-btn"
-                                                                                        onClick={() => setEditExpiresAt("")}
-                                                                                        title="Remove expiration date"
-                                                                                    >
-                                                                                        Clear
-                                                                                    </button>
-                                                                                )}
-                                                                            </div>
-                                                                        </div>
-
-                                                                        <div className="edit-actions">
-                                                                            <button
-                                                                                type="button"
-                                                                                className="save-button"
-                                                                                onClick={() => updateUrl(url.shortCode)}
-                                                                                disabled={updating}
-                                                                            >
-                                                                                {updating ? "Saving..." : "Save"}
-                                                                            </button>
-
-                                                                            <button
-                                                                                type="button"
-                                                                                className="cancel-button"
-                                                                                onClick={cancelEdit}
-                                                                                disabled={updating}
-                                                                            >
-                                                                                Cancel
-                                                                            </button>
-                                                                        </div>
-                                                                    </div>
-                                                                ) : (
-                                                                    <span className="long-url" title={url.longUrl}>
-                                                                        {url.longUrl}
-                                                                    </span>
-                                                                )}
-                                                            </td>
-
-                                                            <td>
-                                                                <span className="click-count">{url.clicks || 0}</span>
-                                                            </td>
-
-                                                            <td>{formatDate(url.expiresAt)}</td>
-
-                                                            <td>
-                                                                <span className={`status ${expired ? "expired" : "active"}`}>
-                                                                    <span />
-                                                                    {expired ? "Expired" : "Active"}
-                                                                </span>
-                                                            </td>
-
-                                                            <td>
-                                                                <div className="actions">
-                                                                    <button
-                                                                        type="button"
-                                                                        className={`copy-button ${isCopied ? "copied" : ""}`}
-                                                                        onClick={() => copyUrl(getShortUrl(url), url.shortCode)}
-                                                                    >
-                                                                        {isCopied ? "Copied! ✓" : "Copy"}
-                                                                    </button>
-
-                                                                    {!isEditing && (
-                                                                        <button
-                                                                            type="button"
-                                                                            className="edit-button"
-                                                                            onClick={() => startEdit(url)}
-                                                                        >
-                                                                            Edit
-                                                                        </button>
-                                                                    )}
-
-                                                                    <button
-                                                                        type="button"
-                                                                        className="delete-button"
-                                                                        onClick={() => deleteUrl(url.shortCode)}
-                                                                    >
-                                                                        Delete
-                                                                    </button>
-                                                                </div>
-                                                            </td>
-                                                        </tr>
-                                                    );
-                                                })}
-                                            </tbody>
-                                        </table>
-                                    </div>
-                                </div>
-                            )}
-                        </>
-                    )}
                 </section>
             </main>
 
@@ -965,7 +409,7 @@ function App() {
                 <div className="footer-links">
                     <a href="#shorten">Create</a>
                     <a href="#how-it-works">How it works</a>
-                    <a href="#recent-links">My links</a>
+                    <a href="#features">Features</a>
                 </div>
             </footer>
         </div>
