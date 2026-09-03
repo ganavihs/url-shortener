@@ -30,7 +30,22 @@ if (process.env.FRONTEND_URL) {
 
 app.use(
     cors({
-        origin: allowedOrigins
+        origin: (origin, callback) => {
+            // Allow requests with no origin (like curl, mobile apps, or health checks)
+            if (!origin) return callback(null, true);
+
+            // Allow if explicitly configured in FRONTEND_URL or localhost
+            if (process.env.FRONTEND_URL === "*" || allowedOrigins.includes(origin)) {
+                return callback(null, true);
+            }
+
+            // Allow all Vercel deployment URLs (*.vercel.app)
+            if (/^https:\/\/.*\.vercel\.app$/.test(origin)) {
+                return callback(null, true);
+            }
+
+            return callback(null, false);
+        }
     })
 );
 
