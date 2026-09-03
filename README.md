@@ -23,7 +23,7 @@ This project was built to understand how a frontend, backend, database, URL enco
 - ✅ Edit URL destination
 - ✅ Delete URLs
 - ✅ Copy short URL to clipboard
-- ✅ React frontend with dark mode support
+- ✅ Clean and modern React frontend
 - ✅ Node.js and Express backend
 - ✅ REST API with comprehensive error handling
 - ✅ CORS support
@@ -58,7 +58,7 @@ Long URL:
 
 https://www.google.com
 
-Short URL:
+Short URL (local development example):
 
 http://localhost:3000/a
 
@@ -95,6 +95,9 @@ url-shortener/
 ---
 
 ## 🔌 API Endpoints
+
+> [!NOTE]
+> All example request and response URLs below use `http://localhost:3000` as the local-development example. In production, short URLs use the configured `BASE_URL` environment variable.
 
 ### Health Check
 **GET /health**
@@ -283,7 +286,7 @@ GET /a
 
 ## Error Handling
 
-All endpoints return appropriate HTTP status codes and JSON error messages:
+All API endpoints return appropriate HTTP status codes and JSON error messages when an error occurs. (Note: On success, `GET /:code` returns an HTTP `302 Found` redirect to the destination URL rather than JSON.)
 
 - `400 Bad Request` - Invalid input (missing fields, invalid format)
 - `404 Not Found` - Resource not found
@@ -309,7 +312,7 @@ The project uses PostgreSQL to store the URLs.
 | Column | Type | Description |
 |---|---|---|
 | id | INTEGER | Unique identifier (primary key, auto-increment) |
-| short_code | VARCHAR(255) | Generated or custom short code (unique) |
+| short_code | VARCHAR(50) | Generated or custom short code (unique) |
 | long_url | TEXT | Original long URL |
 | clicks | INTEGER | Number of times the short URL was accessed (default: 0) |
 | created_at | TIMESTAMP | URL creation timestamp (default: now) |
@@ -352,7 +355,7 @@ Start the server:
 
 node index.js
 
-The backend will run at:
+The backend will run at (local development):
 
 http://localhost:3000
 
@@ -366,7 +369,7 @@ npm install
 
 npm run dev
 
-The frontend will run at:
+The frontend will run at (local development):
 
 http://localhost:5173
 
@@ -407,7 +410,6 @@ New features are developed and tested on the `develop` branch before being merge
 - [x] Node.js and Express backend
 - [x] REST API with error handling
 - [x] CORS support
-- [x] Dark mode support
 - [x] Responsive design
 - [x] GitHub repository
 - [x] Development workflow (main/develop branches)
